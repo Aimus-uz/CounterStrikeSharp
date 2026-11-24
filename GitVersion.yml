@@ -1,1 +1,3 @@
 workflow: GitHubFlow/v1
+# Fork hotfix build: no upstream tags here, so pin the base version (API GetVersion() = 381 >= 380)
+next-version: 1.0.381

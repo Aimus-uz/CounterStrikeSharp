@@ -11,11 +11,12 @@ on:
   push:
     paths-ignore:
       - "docfx/**"
-    branches: ["main"]
+    branches: ["main", "hotfix/**"]
     tags:
       - "v*"
   pull_request:
     branches: ["main"]
+  workflow_dispatch:
 
 jobs:
   setup:
@@ -170,6 +171,40 @@ jobs:
         with:
           name: counterstrikesharp-api-${{ needs.setup.outputs.gitversion_semver }}
           path: managed/CounterStrikeSharp.API/bin/Release
+
+  # Fork-only: build the same Linux zips as `publish`, but only as workflow artifacts (no release, no NuGet).
+  package_fork:
+    if: ${{ github.repository != 'roflmuffin/CounterStrikeSharp' }}
+    needs: ["setup", "build_linux", "build_managed"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: counterstrikesharp-linux-${{ needs.setup.outputs.gitversion_semver }}
+          path: build/linux
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: counterstrikesharp-api-${{ needs.setup.outputs.gitversion_semver }}
+          path: build/api
+
+      - name: Zip Linux builds
+        run: |
+          SEMVER="${{ needs.setup.outputs.gitversion_semver }}"
+          mkdir -p dist build/linux/addons/counterstrikesharp/api
+          cp -r build/api/net10.0/publish/* build/linux/addons/counterstrikesharp/api
+          (cd build/linux && zip -qq -r ../../dist/counterstrikesharp-linux-$SEMVER.zip *)
+          mkdir -p build/linux/addons/counterstrikesharp/dotnet
+          curl -s -L https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/10.0.3/aspnetcore-runtime-10.0.3-linux-x64.tar.gz \
+          | tar xz -C build/linux/addons/counterstrikesharp/dotnet
+          (cd build/linux && zip -qq -r ../../dist/counterstrikesharp-with-runtime-linux-$SEMVER.zip *)
+          (cd dist && sha256sum *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          sha256sum build/linux/addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so build/linux/addons/counterstrikesharp/api/CounterStrikeSharp.API.dll | tee -a dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: counterstrikesharp-linux-packages-${{ needs.setup.outputs.gitversion_semver }}
+          path: dist/
 
   publish:
     if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'roflmuffin/CounterStrikeSharp' }}
